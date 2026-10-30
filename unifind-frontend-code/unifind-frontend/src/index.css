@@ -1202,6 +1202,7 @@ a {
   color: #9aa79f;
 }
 
+<<<<<<< HEAD
 .step > span {
   width: 33px;
   height: 33px;
@@ -2730,3 +2731,6 @@ a {
     scroll-behavior: auto !important;
   }
 }
+=======
+.step > span
+>>>>>>> c9ce3d4aee01f6290f55493ae580f48c56408356
