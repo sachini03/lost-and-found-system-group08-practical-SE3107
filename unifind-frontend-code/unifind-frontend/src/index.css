@@ -235,8 +235,8 @@ a {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  border-radius: 10px;
-  padding: 11px 18px;
+  border-radius: 999px;
+  padding: 11px 22px;
   border: 1px solid transparent;
   font-size: 13px;
   font-weight: 700;
@@ -253,14 +253,14 @@ a {
 }
 
 .btn-primary {
-  background: var(--green);
+  background: linear-gradient(135deg, #0a9a6e, var(--green-dark));
   color: white;
-  box-shadow: 0 5px 14px rgba(7, 134, 94, 0.16);
+  box-shadow: 0 6px 16px rgba(7, 134, 94, 0.22);
 }
 
 .btn-primary:hover {
-  background: var(--green-dark);
-  box-shadow: 0 7px 20px rgba(7, 134, 94, 0.22);
+  background: linear-gradient(135deg, var(--green), var(--green-deep));
+  box-shadow: 0 10px 24px rgba(7, 134, 94, 0.32);
 }
 
 .btn-outline {
