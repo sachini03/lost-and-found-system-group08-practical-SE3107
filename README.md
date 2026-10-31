@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # UniFind - Lost and Found System
 
 A web-based Lost and Found system for university students, built as part of the SE3107 practical (Group 08).
@@ -50,3 +51,7 @@ npm run dev
 ## License
 
 This project is for educational purposes.
+=======
+# lost-and-found-system-group08-practical-SE3107
+SE3107 Software Engineering Foundation Group project
+>>>>>>> fb9cb77 (Improve UniFind system)
