@@ -341,8 +341,8 @@ const submitReport = async (e) => {
                 Found something?
               </h1>
               <p className="hero-copy">
-                A trusted platform to reunite people with their lost belongings
-                across Sri Lanka.
+                A trusted platform to help students and communities reunite
+                with their lost belongings across Sri Lanka.
               </p>
               <form
                 className="hero-search"
@@ -658,7 +658,7 @@ const submitReport = async (e) => {
             <h1>Report a {reportType} Item</h1>
             <p>
               {reportType === "Lost"
-                ? "Provide details to help others find your item."
+                 ? "Provide as many details as you can to help others find your item."
                 : "Help return a found item to its rightful owner."}
             </p>
           </div>
@@ -1348,7 +1348,7 @@ const submitReport = async (e) => {
             <p>
               {page === "Login"
                 ? "Sign in to manage your reports and matches."
-                : "Join the community helping lost items find their way home."}
+                : " Helping lost things find their way home."}
             </p>
             <form
               onSubmit={(e) => {
@@ -1443,7 +1443,7 @@ const submitReport = async (e) => {
         <div className="wrap footer-inner">
           <div>
             <Logo onClick={() => go("Home")} />
-            <p>Helping lost things find their way home.</p>
+                        <p>Helping lost things find their way home, one report at a time.</p>
           </div>
           <div className="footer-links">
             <button onClick={() => go("Explore")}>Explore items</button>
