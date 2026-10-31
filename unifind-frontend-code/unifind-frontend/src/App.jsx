@@ -1182,6 +1182,7 @@ function App() {
                   <div className="review-list">
                     <div className="review-banner">
                       <CheckCircle2 size={20} />
+                      
                       <div>
                         <strong>Ready to submit</strong>
                         <p>Check the information below before publishing.</p>
@@ -1849,4 +1850,4 @@ function App() {
 }
 
 export default App;
->>>>>>> d8a08cdcbbdc209e8379e77aee4faaeee86a7984
+ d8a08cdcbbdc209e8379e77aee4faaeee86a7984

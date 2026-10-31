@@ -2,12 +2,12 @@ require("dotenv").config();
 
 const express = require("express");
 const cors = require("cors");
-<<<<<<< HEAD
+ HEAD
 const { Pool } = require("pg");
 
 const app = express();
 const PORT = process.env.PORT || 4000;
-=======
+
 const { pool } = require("./db");
 const multer = require("multer");
 const path = require("path");
@@ -21,7 +21,7 @@ const PORT = Number(process.env.PORT || 4000);
 const UPLOAD_DIR = path.join(__dirname, "..", "uploads");
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
->>>>>>> d8a08cdcbbdc209e8379e77aee4faaeee86a7984
+ d8a08cdcbbdc209e8379e77aee4faaeee86a7984
 
 app.use(
   cors({
@@ -31,7 +31,7 @@ app.use(
 
 app.use(express.json({ limit: "1mb" }));
 
-<<<<<<< HEAD
+ HEAD
 const pool = new Pool({
   host: process.env.DB_HOST || "localhost",
   port: Number(process.env.DB_PORT || 5432),
@@ -136,7 +136,7 @@ app.post("/api/items", async (req, res) => {
       date,
       description,
     } = req.body;
-=======
+
 // Serve uploaded images
 app.use("/uploads", express.static(UPLOAD_DIR));
 
@@ -544,7 +544,7 @@ app.post("/api/items", requireAuth, uploadImage.single("image"), async (req, res
     color,
     brand,
   } = req.body || {};
->>>>>>> d8a08cdcbbdc209e8379e77aee4faaeee86a7984
+ d8a08cdcbbdc209e8379e77aee4faaeee86a7984
 
     if (
       !title?.trim() ||
@@ -602,7 +602,7 @@ app.post("/api/items", requireAuth, uploadImage.single("image"), async (req, res
       error: "Failed to submit report.",
     });
   }
-<<<<<<< HEAD
+ HEAD
 });
 
 // Get one report by ID
@@ -658,7 +658,7 @@ process.on("SIGINT", async () => {
     process.exit(0);
   });
 });
-=======
+
 
   const normalizedKind = String(kind).toUpperCase();
 
@@ -792,7 +792,7 @@ process.on("SIGINT", async () => {
       error: "Unable to submit the report.",
     });
   }
-});
+;
 
 app.post("/api/upload", uploadImage.single("image"), (req, res) => {
   if (!req.file) {
@@ -819,4 +819,4 @@ app.use((err, req, res, next) => {
 app.listen(PORT, () => {
   console.log(`UniFind backend running at http://localhost:${PORT}`);
 });
->>>>>>> d8a08cdcbbdc209e8379e77aee4faaeee86a7984
+ d8a08cdcbbdc209e8379e77aee4faaeee86a7984
