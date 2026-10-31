@@ -9,7 +9,18 @@ export const initialItems = [
   { id: 8, title: 'Blue Water Bottle', type: 'Lost', category: 'Personal Items', subcategory: 'Bottle', district: 'Gampaha', location: 'University grounds', date: '2026-09-18', color: 'Blue', brand: 'Unknown', image: 'https://images.unsplash.com/photo-1602143407151-7111542de6e8?auto=format&fit=crop&w=800&q=85', description: 'Reusable blue water bottle with a small sticker on the side.' },
   { id: 9, title: 'Notebook', type: 'Found', category: 'Documents & Cards', subcategory: 'Book/Notebook', district: 'Kurunegala', location: 'Kurunegala', date: '2026-09-17', color: 'Brown', brand: 'Unknown', image: 'https://images.unsplash.com/photo-1531346878377-a5be20888e57?auto=format&fit=crop&w=800&q=85', description: 'A notebook was found in a lecture room. The writing inside is kept private.' },
 ];
-export const categories = ['Electronics', 'Bags', 'Documents & Cards', 'Keys', 'Jewelry & Accessories', 'Clothing', 'Personal Items', 'Transport Items', 'Other'];
+export const categories = [
+  "Bags",
+  "Books",
+  "Clothing",
+  "Documents",
+  "Electronics",
+  "Jewellery",
+  "Keys",
+  "Other",
+  "Sports Equipment",
+  "Wallets",
+];
 export const districts = ["Ampara",
   "Anuradhapura",
   "Badulla",
