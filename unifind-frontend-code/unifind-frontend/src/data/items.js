@@ -20,7 +20,6 @@ export const categories = [
   "Other",
   "Sports Equipment",
   "Wallets",
-  "lecture notes",
 ];
 export const districts = ["Ampara",
   "Anuradhapura",

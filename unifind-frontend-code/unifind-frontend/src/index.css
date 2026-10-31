@@ -1202,7 +1202,6 @@ a {
   color: #9aa79f;
 }
 
- HEAD
 .step > span {
   width: 33px;
   height: 33px;
@@ -2732,4 +2731,55 @@ a {
   }
 }
 
+/* Photo preview in the report form */
+.upload-preview {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid #dce5df;
+  border-radius: 14px;
+  background: white;
+}
 
+.upload-preview img {
+  width: 100%;
+  max-height: 220px;
+  object-fit: cover;
+  border-radius: 10px;
+}
+
+.upload-preview-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.upload-preview-info strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+/* Initials avatar for logged-in users */
+.avatar-initials {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: #07865e;
+  color: white;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.profile-avatar .avatar-initials {
+  font-size: 28px;
+}
+
+.auth-form .error-message {
+  margin-bottom: 14px;
+}

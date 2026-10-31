@@ -30,7 +30,16 @@ import {
   Sparkles,
 } from "lucide-react";
 import { categories, districts } from "./data/items";
-import { getItems, createItem } from "./api";
+import {
+  getItems,
+  createItem,
+  register,
+  login,
+  logout,
+  getMe,
+  getMyItems,
+  getToken,
+} from "./api";
 
 const navItems = ["Home", "Explore", "Report Item", "About"];
 
@@ -143,6 +152,14 @@ function App() {
   const [profileTab, setProfileTab] = useState("Lost");
   const [step, setStep] = useState(1);
   const [form, setForm] = useState(emptyForm);
+  const [user, setUser] = useState(null);
+  const [myItems, setMyItems] = useState([]);
+  const [pendingPage, setPendingPage] = useState(null);
+  const [authForm, setAuthForm] = useState({ full_name: "", email: "", password: "" });
+  const [authError, setAuthError] = useState("");
+  const [authBusy, setAuthBusy] = useState(false);
+  const [photo, setPhoto] = useState(null);
+  const [photoPreview, setPhotoPreview] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -170,6 +187,29 @@ function App() {
     };
   }, []);
 
+  // Restore the login session when the page loads.
+  useEffect(() => {
+    if (!getToken()) return;
+    getMe()
+      .then(setUser)
+      .catch(() => logout());
+  }, []);
+
+  // Load this user's own reports whenever the logged-in user changes.
+  const refreshMyItems = async () => {
+    try {
+      const data = await getMyItems();
+      setMyItems(data.map(normalizeItem));
+    } catch (error) {
+      console.error("Failed to load your reports:", error);
+    }
+  };
+
+  useEffect(() => {
+    if (user) refreshMyItems();
+    else setMyItems([]);
+  }, [user]);
+
   // Notices clear themselves after a few seconds.
   useEffect(() => {
     if (!notice) return undefined;
@@ -195,11 +235,78 @@ function App() {
 
   // `flash` lets a page change show a message ({ text, type }) after navigating.
   const go = (p, flash = null) => {
+    // Reporting and the profile need an account.
+    if ((p === "Report Item" || p === "Profile") && !user) {
+      setPendingPage(p);
+      setAuthError("");
+      setPage("Login");
+      setMobileNav(false);
+      setNotice({
+        text: "Please log in or create an account to continue.",
+        type: "error",
+      });
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
     setPage(p);
     setMobileNav(false);
     setNotice(flash);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
+
+  const updateAuthForm = (e) =>
+    setAuthForm({ ...authForm, [e.target.name]: e.target.value });
+
+  const submitAuth = async (e) => {
+    e.preventDefault();
+    setAuthError("");
+    setAuthBusy(true);
+
+    try {
+      const account =
+        page === "Register"
+          ? await register(authForm.full_name, authForm.email, authForm.password)
+          : await login(authForm.email, authForm.password);
+
+      const target = pendingPage || "Home";
+      setUser(account);
+      setPendingPage(null);
+      setAuthForm({ full_name: "", email: "", password: "" });
+      setPage(target);
+      setNotice({
+        text:
+          page === "Register"
+            ? `Welcome to FindIt, ${account.full_name}!`
+            : `Welcome back, ${account.full_name}!`,
+        type: "success",
+      });
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch (error) {
+      setAuthError(error.message || "Something went wrong. Please try again.");
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  const handleLogout = () => {
+    logout();
+    setUser(null);
+    setMyItems([]);
+    setPendingPage(null);
+    setPage("Home");
+    setMobileNav(false);
+    setNotice({ text: "You have been logged out.", type: "success" });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const userInitials = user
+    ? user.full_name
+        .split(" ")
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((w) => w[0].toUpperCase())
+        .join("")
+    : "";
 
   const openItem = (item) => {
     setSelected(item);
@@ -216,6 +323,36 @@ function App() {
     setForm(emptyForm);
     setStep(1);
     go("Report Item");
+  };
+
+  // Release the preview URL when the photo changes or the page unmounts.
+  useEffect(() => {
+    return () => {
+      if (photoPreview) URL.revokeObjectURL(photoPreview);
+    };
+  }, [photoPreview]);
+
+  const choosePhoto = (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+      setNotice({ text: "Please choose a PNG, JPG or WEBP image.", type: "error" });
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setNotice({ text: "The image must be smaller than 5 MB.", type: "error" });
+      return;
+    }
+
+    setPhoto(file);
+    setPhotoPreview(URL.createObjectURL(file));
+  };
+
+  const removePhoto = () => {
+    setPhoto(null);
+    setPhotoPreview("");
   };
 
   const updateForm = (e) =>
@@ -239,16 +376,25 @@ function App() {
         color: form.color || "",
       };
 
-      await createItem(payload);
+      await createItem(payload, photo);
       const data = await getItems();
       setItems(data.map(normalizeItem));
+      refreshMyItems();
       setForm(emptyForm);
+      removePhoto();
       go("Explore", {
         text: `${reportType} item report submitted successfully.`,
         type: "success",
       });
     } catch (error) {
       console.error("Report submission failed:", error);
+      if (/log in/i.test(error.message || "")) {
+        logout();
+        setUser(null);
+        setPendingPage("Report Item");
+        setAuthError("");
+        setPage("Login");
+      }
       setNotice({
         text: error.message || "Could not submit the report.",
         type: "error",
@@ -263,7 +409,7 @@ function App() {
     setDistrictFilter("All districts");
   };
 
-  const profileItems = items.filter((i) => i.type === profileTab).slice(0, 8);
+  const profileItems = myItems.filter((i) => i.type === profileTab).slice(0, 8);
   const savedItems = items.filter((i) => saved.includes(i.id));
   const chatItem = selected || items[2] || items[0] || null;
 
@@ -323,22 +469,42 @@ function App() {
               <Bell size={19} />
               <i />
             </button>
-            <button
-              className="avatar-button"
-              onClick={() => go("Profile")}
-              aria-label="Profile"
-            >
-              <img
-                src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&q=80"
-                alt="Profile"
-              />
-            </button>
-            <button className="btn btn-outline" onClick={() => go("Login")}>
-              Log in
-            </button>
-            <button className="btn btn-primary" onClick={() => go("Register")}>
-              Sign up
-            </button>
+            {user ? (
+              <>
+                <button
+                  className="avatar-button"
+                  onClick={() => go("Profile")}
+                  aria-label="Profile"
+                  title={user.full_name}
+                >
+                  <span className="avatar-initials">{userInitials}</span>
+                </button>
+                <button className="btn btn-outline" onClick={handleLogout}>
+                  Log out
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  className="btn btn-outline"
+                  onClick={() => {
+                    setAuthError("");
+                    go("Login");
+                  }}
+                >
+                  Log in
+                </button>
+                <button
+                  className="btn btn-primary"
+                  onClick={() => {
+                    setAuthError("");
+                    go("Register");
+                  }}
+                >
+                  Sign up
+                </button>
+              </>
+            )}
             <button
               className="icon-button mobile-menu"
               onClick={() => setMobileNav(!mobileNav)}
@@ -944,31 +1110,41 @@ function App() {
                 )}
               </div>
               <aside className="upload-panel">
-                <h3>Upload photos</h3>
+                <h3>Upload photo</h3>
                 <p>
                   Photos can help identify an item. Avoid showing private
                   information.
                 </p>
-                <label className="upload-drop">
-                  <Upload size={27} />
-                  <strong>Drag & drop images here</strong>
-                  <span>or</span>
-                  <input
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp"
-                    multiple
-                    onChange={(e) =>
-                      setNotice({
-                        text: `${e.target.files.length} file(s) selected for this demo.`,
-                        type: "success",
-                      })
-                    }
-                  />
-                  <span className="btn btn-primary upload-choose">
-                    Choose files
-                  </span>
-                  <small>PNG, JPG or WEBP · Max 5 MB each</small>
-                </label>
+                {photoPreview ? (
+                  <div className="upload-preview">
+                    <img src={photoPreview} alt="Selected item" />
+                    <div className="upload-preview-info">
+                      <strong>{photo.name}</strong>
+                      <button
+                        type="button"
+                        className="btn btn-outline"
+                        onClick={removePhoto}
+                      >
+                        Remove photo
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <label className="upload-drop">
+                    <Upload size={27} />
+                    <strong>Add a photo of the item</strong>
+                    <span>or</span>
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      onChange={choosePhoto}
+                    />
+                    <span className="btn btn-primary upload-choose">
+                      Choose photo
+                    </span>
+                    <small>PNG, JPG or WEBP · Max 5 MB</small>
+                  </label>
+                )}
                 <div className="privacy-card">
                   <LockKeyhole size={18} />
                   <div>
@@ -1187,14 +1363,15 @@ function App() {
         <main className="wrap profile-page">
           <div className="profile-heading">
             <div className="profile-avatar">
-              <img
-                src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80"
-                alt="User"
-              />
+              <span className="avatar-initials">{userInitials}</span>
             </div>
             <div>
               <h1>My Items</h1>
-              <p>Manage your lost and found reports in one place.</p>
+              <p>
+                {user ? `${user.full_name} · ${user.email}` : ""}
+                {user ? " — " : ""}
+                Manage your lost and found reports in one place.
+              </p>
             </div>
           </div>
           <div className="profile-layout">
@@ -1416,36 +1593,59 @@ function App() {
                   ? "Sign in to manage your reports and matches."
                   : "Join the community helping lost items find their way home."}
               </p>
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  go("Home", {
-                    text: "Authentication is a frontend demo. Connect your backend to enable accounts.",
-                    type: "success",
-                  });
-                }}
-              >
+              <form onSubmit={submitAuth}>
+                {authError && (
+                  <div className="error-message" role="alert">
+                    {authError}
+                  </div>
+                )}
                 {page === "Register" && (
                   <label className="field">
                     Full name
-                    <input required placeholder="Your name" />
+                    <input
+                      required
+                      name="full_name"
+                      minLength="2"
+                      autoComplete="name"
+                      placeholder="Your name"
+                      value={authForm.full_name}
+                      onChange={updateAuthForm}
+                    />
                   </label>
                 )}
                 <label className="field">
                   Email address
-                  <input required type="email" placeholder="you@example.com" />
+                  <input
+                    required
+                    type="email"
+                    name="email"
+                    autoComplete="email"
+                    placeholder="you@example.com"
+                    value={authForm.email}
+                    onChange={updateAuthForm}
+                  />
                 </label>
                 <label className="field">
                   Password
                   <input
                     required
                     type="password"
+                    name="password"
                     minLength="8"
+                    autoComplete={
+                      page === "Login" ? "current-password" : "new-password"
+                    }
                     placeholder="At least 8 characters"
+                    value={authForm.password}
+                    onChange={updateAuthForm}
                   />
                 </label>
-                <button className="btn btn-primary">
-                  {page === "Login" ? "Sign in" : "Create account"}{" "}
+                <button className="btn btn-primary" disabled={authBusy}>
+                  {authBusy
+                    ? "Please wait..."
+                    : page === "Login"
+                      ? "Sign in"
+                      : "Create account"}{" "}
                   <ChevronRight size={17} />
                 </button>
               </form>
@@ -1457,6 +1657,7 @@ function App() {
                   href="#"
                   onClick={(e) => {
                     e.preventDefault();
+                    setAuthError("");
                     go(page === "Login" ? "Register" : "Login");
                   }}
                 >

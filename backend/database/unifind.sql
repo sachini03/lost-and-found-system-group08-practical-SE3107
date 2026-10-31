@@ -398,4 +398,37 @@ CREATE INDEX idx_audit_logs_actor
 CREATE INDEX idx_audit_logs_entity
     ON audit_logs(entity_type, entity_id);
 
+-- =========================================================
+-- 15. DEVELOPMENT SEED DATA
+-- The API assigns new reports to the first user in this table.
+-- =========================================================
+
+INSERT INTO users (full_name, email, password_hash, email_verified)
+VALUES ('Demo Student', 'demo@unifind.lk', 'not-a-real-hash', TRUE);
+
+INSERT INTO items (reporter_id, item_type, category_id, title, description,
+                   brand, color, district_id, location_description, event_date)
+SELECT u.id, v.item_type::item_type, c.id, v.title, v.description,
+       v.brand, v.color, d.id, v.place, CURRENT_DATE - v.days_ago
+FROM (VALUES
+  ('LOST',  'Electronics', 'iPhone 13 (Black)', 'Black iPhone 13 with a clear case. Small scratch near the camera.', 'Apple', 'Black', 'Colombo', 'University of Colombo', 5),
+  ('FOUND', 'Documents',   'Student ID Card', 'Student ID card found near the library entrance. Name hidden for privacy.', 'University ID', 'White', 'Kalutara', 'University of Kelaniya', 8),
+  ('LOST',  'Bags',        'Black Backpack', 'Black backpack with a laptop compartment and a small keychain.', 'HP', 'Black', 'Kandy', 'Kandy', 10),
+  ('FOUND', 'Keys',        'Key Set', 'Small set of keys on a metal ring found near a bus stop.', NULL, 'Gold', 'Galle', 'Galle town', 12)
+) AS v(item_type, category, title, description, brand, color, district, place, days_ago)
+JOIN categories c ON c.name = v.category
+JOIN districts d ON d.name = v.district
+CROSS JOIN (SELECT id FROM users ORDER BY created_at LIMIT 1) u;
+
+-- Demo photos for the sample reports (real uploads are saved as file names)
+INSERT INTO item_images (item_id, storage_key, caption)
+SELECT i.id, v.url, i.title
+FROM items i
+JOIN (VALUES
+  ('iPhone 13 (Black)', 'https://images.unsplash.com/photo-1592750475338-74b7b21085ab?auto=format&fit=crop&w=800&q=85'),
+  ('Student ID Card',   'https://images.unsplash.com/photo-1606761568499-6d2451b23c66?auto=format&fit=crop&w=800&q=85'),
+  ('Black Backpack',    'https://images.unsplash.com/photo-1553062407-98eeb64c6a62?auto=format&fit=crop&w=800&q=85'),
+  ('Key Set',           'https://images.unsplash.com/photo-1582139329536-e7284fece509?auto=format&fit=crop&w=800&q=85')
+) AS v(title, url) ON v.title = i.title;
+
 COMMIT;
