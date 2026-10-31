@@ -1,10 +1,9 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   MapPin,
   Search,
   ChevronDown,
   Bell,
-  UserRound,
   Menu,
   X,
   Plus,
@@ -18,13 +17,9 @@ import {
   ChevronRight,
   CheckCircle2,
   MessageCircle,
-  LayoutDashboard,
   ClipboardList,
   Users,
-  Flag,
   Building2,
-  Settings,
-  LogOut,
   Eye,
   LockKeyhole,
   Send,
@@ -32,12 +27,38 @@ import {
   Clock3,
   CircleHelp,
   ArrowLeft,
-  Check,
   Sparkles,
 } from "lucide-react";
-import { initialItems, categories, districts } from "./data/items";
+import { categories, districts } from "./data/items";
 import { getItems, createItem } from "./api";
+
 const navItems = ["Home", "Explore", "Report Item", "About"];
+
+const emptyForm = {
+  title: "",
+  category: "",
+  subcategory: "",
+  district: "",
+  location: "",
+  date: "",
+  description: "",
+  brand: "",
+  color: "",
+};
+
+// Maps an API record to the shape the UI uses. Kind is normalised to
+// "Lost" / "Found" so filters, tabs and the status badge always agree.
+const normalizeItem = (item) => {
+  const kind = String(item.kind || item.type || "Lost");
+  return {
+    ...item,
+    type: kind.charAt(0).toUpperCase() + kind.slice(1).toLowerCase(),
+    location: item.place,
+    subcategory: item.subcategory || item.category,
+    image: item.image_url || item.image || "",
+  };
+};
+
 function Logo({ onClick }) {
   return (
     <button className="brand" onClick={onClick} aria-label="FindIt home">
@@ -50,9 +71,20 @@ function Logo({ onClick }) {
     </button>
   );
 }
+
 function Status({ type }) {
   return <span className={`status ${type.toLowerCase()}`}>{type} Item</span>;
 }
+
+function LoadingState({ label = "Loading items..." }) {
+  return (
+    <div className="loading-state" role="status">
+      <span className="loading-spinner" />
+      {label}
+    </div>
+  );
+}
+
 function ItemCard({ item, saved, onSave, onOpen }) {
   return (
     <article className="item-card">
@@ -93,6 +125,7 @@ function ItemCard({ item, saved, onSave, onOpen }) {
     </article>
   );
 }
+
 function App() {
   const [page, setPage] = useState("Home");
   const [items, setItems] = useState([]);
@@ -105,57 +138,45 @@ function App() {
   const [selected, setSelected] = useState(null);
   const [reportType, setReportType] = useState("Lost");
   const [mobileNav, setMobileNav] = useState(false);
-  const [notice, setNotice] = useState("");
+  const [notice, setNotice] = useState(null); // { text, type: "success" | "error" }
   const [loadingItems, setLoadingItems] = useState(true);
+  const [profileTab, setProfileTab] = useState("Lost");
+  const [step, setStep] = useState(1);
+  const [form, setForm] = useState(emptyForm);
 
-  React.useEffect(() => {
+  useEffect(() => {
     let cancelled = false;
 
     async function loadItems() {
       try {
         const data = await getItems();
-
-        if (!cancelled) {
-          setItems(
-            data.map((item) => ({
-              ...item,
-              type: item.kind,
-              location: item.place,
-              subcategory: item.subcategory || item.category,
-              image: item.image_url || item.image || "",
-            })),
-          );
-        }
+        if (!cancelled) setItems(data.map(normalizeItem));
       } catch (error) {
         console.error("Failed to load reports:", error);
         if (!cancelled) {
-          setNotice("Could not load reports from the server.");
+          setNotice({
+            text: "Could not load reports from the server.",
+            type: "error",
+          });
         }
       } finally {
-        if (!cancelled) {
-          setLoadingItems(false);
-        }
+        if (!cancelled) setLoadingItems(false);
       }
     }
 
     loadItems();
-
     return () => {
       cancelled = true;
     };
   }, []);
-  const [step, setStep] = useState(1);
-  const [form, setForm] = useState({
-    title: "",
-    category: "",
-    subcategory: "",
-    district: "",
-    location: "",
-    date: "",
-    description: "",
-    brand: "",
-    color: "",
-  });
+
+  // Notices clear themselves after a few seconds.
+  useEffect(() => {
+    if (!notice) return undefined;
+    const timer = setTimeout(() => setNotice(null), 5000);
+    return () => clearTimeout(timer);
+  }, [notice]);
+
   const filteredItems = useMemo(() => {
     let list = items.filter((item) => {
       const text =
@@ -171,84 +192,69 @@ function App() {
     if (sort === "Oldest first") list = [...list].reverse();
     return list;
   }, [items, query, typeFilter, categoryFilter, districtFilter, sort]);
-  const go = (p) => {
+
+  // `flash` lets a page change show a message ({ text, type }) after navigating.
+  const go = (p, flash = null) => {
     setPage(p);
     setMobileNav(false);
-    setNotice("");
+    setNotice(flash);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
+
+  const openItem = (item) => {
+    setSelected(item);
+    go("Item Details");
+  };
+
   const toggleSaved = (id) =>
     setSaved((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
     );
+
   const startReport = (type) => {
     setReportType(type);
-    setForm({
-      title: "",
-      category: "",
-      subcategory: "",
-      district: "",
-      location: "",
-      date: "",
-      description: "",
-      brand: "",
-      color: "",
-    });
+    setForm(emptyForm);
     setStep(1);
     go("Report Item");
   };
+
   const updateForm = (e) =>
     setForm({ ...form, [e.target.name]: e.target.value });
-  
-const submitReport = async (e) => {
-  e.preventDefault();
 
-  try {
-    const payload = {
-      title: form.title.trim(),
-      kind: reportType.toUpperCase(),
-      category: form.category,
-      subcategory: form.subcategory || form.category,
-      district: form.district,
-      place: form.location,
-      date: form.date || new Date().toISOString().slice(0, 10),
-      description:
-        form.description || "No additional description provided.",
-      brand: form.brand || "",
-      color: form.color || "",
-    };
+  const submitReport = async (e) => {
+    e.preventDefault();
 
-    await createItem(payload);
+    try {
+      const payload = {
+        title: form.title.trim(),
+        kind: reportType.toUpperCase(),
+        category: form.category,
+        subcategory: form.subcategory || form.category,
+        district: form.district,
+        place: form.location,
+        date: form.date || new Date().toISOString().slice(0, 10),
+        description:
+          form.description || "No additional description provided.",
+        brand: form.brand || "",
+        color: form.color || "",
+      };
 
-    setNotice(`${reportType} item report submitted successfully.`);
-    setForm({
-      title: "",
-      category: "",
-      subcategory: "",
-      district: "",
-      location: "",
-      date: "",
-      description: "",
-      brand: "",
-      color: "",
-    });
-
-    go("Explore");
-    const data = await getItems();
-    setItems(
-      data.map((item) => ({
-        ...item,
-        type: item.kind,
-        location: item.place,
-        subcategory: item.subcategory || item.category,
-        image: item.image_url || item.image || "",
-      })),
-    );
-  } catch (error) {
-    console.error("Report submission failed:", error);
-    setNotice(error.message || "Could not submit the report.");
-  }
-};
+      await createItem(payload);
+      const data = await getItems();
+      setItems(data.map(normalizeItem));
+      setForm(emptyForm);
+      go("Explore", {
+        text: `${reportType} item report submitted successfully.`,
+        type: "success",
+      });
+    } catch (error) {
+      console.error("Report submission failed:", error);
+      setNotice({
+        text: error.message || "Could not submit the report.",
+        type: "error",
+      });
+    }
+  };
 
   const resetFilters = () => {
     setQuery("");
@@ -256,26 +262,52 @@ const submitReport = async (e) => {
     setCategoryFilter("All categories");
     setDistrictFilter("All districts");
   };
-  const openReport = () => startReport("Lost");
+
+  const profileItems = items.filter((i) => i.type === profileTab).slice(0, 8);
+  const savedItems = items.filter((i) => saved.includes(i.id));
+  const chatItem = selected || items[2] || items[0] || null;
+
+  const notifications = [
+    {
+      icon: <Sparkles size={18} />,
+      title: "New possible match found",
+      body: "Your lost item “Black Backpack” has a possible match.",
+      time: "2 hours ago",
+    },
+    {
+      icon: <MessageCircle size={18} />,
+      title: "New message",
+      body: "You have a new message about your item.",
+      time: "4 hours ago",
+    },
+    {
+      icon: <CheckCircle2 size={18} />,
+      title: "Status updated",
+      body: "Your item “Student ID Card” has been marked as returned.",
+      time: "Yesterday",
+    },
+    {
+      icon: <PackageSearch size={18} />,
+      title: "New found item in your district",
+      body: "A new found item has been posted in Colombo.",
+      time: "1 day ago",
+    },
+  ];
+
+  const navigate = (n) => (n === "Report Item" ? startReport("Lost") : go(n));
+
   return (
     <div className="app-shell">
+      {/* ===================== NAVIGATION ===================== */}
       <header className="topbar">
         <div className="nav-inner">
           <Logo onClick={() => go("Home")} />
-          <button
-            className="mobile-menu"
-            onClick={() => setMobileNav(!mobileNav)}
-          >
-            {mobileNav ? <X /> : <Menu />}
-          </button>
-          <nav className={mobileNav ? "main-nav mobile-open" : "main-nav"}>
+          <nav className="main-nav" aria-label="Main navigation">
             {navItems.map((n) => (
               <button
                 key={n}
                 className={page === n ? "nav-link active" : "nav-link"}
-                onClick={() =>
-                  n === "Report Item" ? startReport("Lost") : go(n)
-                }
+                onClick={() => navigate(n)}
               >
                 {n}
                 {n === "Explore" && <ChevronDown size={13} />}
@@ -297,34 +329,60 @@ const submitReport = async (e) => {
               aria-label="Profile"
             >
               <img
-                src="https://images.unsplash.com/photo-1535713875002-d1d0cf377cum?auto=format&fit=crop&w=100&q=80"
+                src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&q=80"
                 alt="Profile"
               />
             </button>
-            <button
-              className="btn btn-outline nav-login"
-              onClick={() => go("Login")}
-            >
+            <button className="btn btn-outline" onClick={() => go("Login")}>
               Log in
             </button>
-            <button
-              className="btn btn-primary nav-signup"
-              onClick={() => go("Register")}
-            >
+            <button className="btn btn-primary" onClick={() => go("Register")}>
               Sign up
+            </button>
+            <button
+              className="icon-button mobile-menu"
+              onClick={() => setMobileNav(!mobileNav)}
+              aria-label={mobileNav ? "Close menu" : "Open menu"}
+              aria-expanded={mobileNav}
+            >
+              {mobileNav ? <X /> : <Menu />}
             </button>
           </div>
         </div>
       </header>
-      {notice && (
-        <div className="toast">
-          <CheckCircle2 size={18} />
-          {notice}
-          <button onClick={() => setNotice("")}>
-            <X size={15} />
-          </button>
+
+      {/* The new stylesheet hides .main-nav on mobile, so the open menu
+          reuses the profile-menu list styles. */}
+      {mobileNav && (
+        <div className="wrap">
+          <nav className="profile-sidebar" aria-label="Mobile navigation">
+            <div className="profile-menu">
+              {navItems.map((n) => (
+                <button
+                  key={n}
+                  className={page === n ? "active" : ""}
+                  onClick={() => navigate(n)}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          </nav>
         </div>
       )}
+
+      {notice && (
+        <div className="wrap">
+          <div
+            className={notice.type === "error" ? "error-message" : "success-message"}
+            role="status"
+          >
+            {notice.text}
+          </div>
+        </div>
+      )}
+
+      {/* ===================== HOME ===================== */}
       {page === "Home" && (
         <>
           <section className="hero">
@@ -418,6 +476,7 @@ const submitReport = async (e) => {
               <MapPin size={13} /> Connecting communities across Sri Lanka
             </div>
           </section>
+
           <section className="features wrap">
             <div className="feature">
               <span className="feature-icon blue">
@@ -448,6 +507,7 @@ const submitReport = async (e) => {
               <p>Your identity stays private until confirmed.</p>
             </div>
           </section>
+
           <section className="stats wrap">
             <div>
               <strong>
@@ -472,6 +532,7 @@ const submitReport = async (e) => {
               <p>Positive Response</p>
             </div>
           </section>
+
           <section className="section wrap">
             <div className="section-heading">
               <div>
@@ -483,18 +544,23 @@ const submitReport = async (e) => {
                 Explore all items <ArrowUpRight size={16} />
               </button>
             </div>
-            <div className="item-grid">
-              {items.slice(0, 4).map((item) => (
-                <ItemCard
-                  key={item.id}
-                  item={item}
-                  saved={saved.includes(item.id)}
-                  onSave={toggleSaved}
-                  onOpen={setSelected}
-                />
-              ))}
-            </div>
+            {loadingItems ? (
+              <LoadingState />
+            ) : (
+              <div className="item-grid">
+                {items.slice(0, 4).map((item) => (
+                  <ItemCard
+                    key={item.id}
+                    item={item}
+                    saved={saved.includes(item.id)}
+                    onSave={toggleSaved}
+                    onOpen={openItem}
+                  />
+                ))}
+              </div>
+            )}
           </section>
+
           <section className="cta wrap">
             <div className="cta-icon">
               <PackageSearch size={28} />
@@ -520,6 +586,8 @@ const submitReport = async (e) => {
           </section>
         </>
       )}
+
+      {/* ===================== EXPLORE ===================== */}
       {(page === "Explore" || page === "Browse Items") && (
         <main className="wrap page-main">
           <div className="page-title-row">
@@ -624,7 +692,9 @@ const submitReport = async (e) => {
               <SlidersHorizontal size={15} /> Updated just now
             </span>
           </div>
-          {filteredItems.length ? (
+          {loadingItems ? (
+            <LoadingState />
+          ) : filteredItems.length ? (
             <div className="item-grid browse-grid">
               {filteredItems.map((item) => (
                 <ItemCard
@@ -632,7 +702,7 @@ const submitReport = async (e) => {
                   item={item}
                   saved={saved.includes(item.id)}
                   onSave={toggleSaved}
-                  onOpen={setSelected}
+                  onOpen={openItem}
                 />
               ))}
             </div>
@@ -648,13 +718,14 @@ const submitReport = async (e) => {
           )}
         </main>
       )}
+
+      {/* ===================== REPORT FORM ===================== */}
       {page === "Report Item" && (
         <main className="wrap form-page">
           <button className="back-link" onClick={() => go("Home")}>
             <ArrowLeft size={16} /> Back to home
           </button>
           <div className="form-heading">
-            <span className="section-kicker">HELP REUNITE AN ITEM</span>
             <h1>Report a {reportType} Item</h1>
             <p>
               {reportType === "Lost"
@@ -832,12 +903,15 @@ const submitReport = async (e) => {
                         </select>
                       </label>
                     )}
-                    <div className="privacy-inline">
+                    <div className="privacy-card">
                       <ShieldCheck size={19} />
-                      <p>
-                        Your exact private address and personal contact details
-                        will not appear on public listings.
-                      </p>
+                      <div>
+                        <strong>Your details stay private</strong>
+                        <p>
+                          Your exact private address and personal contact
+                          details will not appear on public listings.
+                        </p>
+                      </div>
                     </div>
                   </>
                 )}
@@ -884,9 +958,10 @@ const submitReport = async (e) => {
                     accept="image/png,image/jpeg,image/webp"
                     multiple
                     onChange={(e) =>
-                      setNotice(
-                        `${e.target.files.length} file(s) selected for this demo.`,
-                      )
+                      setNotice({
+                        text: `${e.target.files.length} file(s) selected for this demo.`,
+                        type: "success",
+                      })
                     }
                   />
                   <span className="btn btn-primary upload-choose">
@@ -922,6 +997,8 @@ const submitReport = async (e) => {
           </form>
         </main>
       )}
+
+      {/* ===================== ITEM DETAILS ===================== */}
       {page === "Item Details" && selected && (
         <main className="wrap detail-page">
           <button className="back-link" onClick={() => go("Explore")}>
@@ -966,12 +1043,12 @@ const submitReport = async (e) => {
               <div className="detail-actions">
                 <button
                   className="btn btn-primary"
-                  onClick={() => {
-                    setNotice(
-                      "Claim started in demo mode. Sign in and verify ownership to continue.",
-                    );
-                    go("Login");
-                  }}
+                  onClick={() =>
+                    go("Login", {
+                      text: "Claim started in demo mode. Sign in and verify ownership to continue.",
+                      type: "success",
+                    })
+                  }
                 >
                   {selected.type === "Found"
                     ? "I think this is mine"
@@ -1010,6 +1087,8 @@ const submitReport = async (e) => {
           </div>
         </main>
       )}
+
+      {/* ===================== CHAT ===================== */}
       {page === "Chat" && (
         <main className="wrap chat-page">
           <button className="back-link" onClick={() => go("Explore")}>
@@ -1027,7 +1106,7 @@ const submitReport = async (e) => {
                     <span className="online-dot" /> Anonymous conversation
                   </p>
                 </div>
-                <button className="icon-button">
+                <button className="icon-button" aria-label="Help">
                   <CircleHelp />
                 </button>
               </div>
@@ -1056,86 +1135,134 @@ const submitReport = async (e) => {
                 className="chat-compose"
                 onSubmit={(e) => {
                   e.preventDefault();
-                  setNotice("Message sent in demo mode.");
+                  setNotice({
+                    text: "Message sent in demo mode.",
+                    type: "success",
+                  });
                   e.currentTarget.reset();
                 }}
               >
-                <button type="button" className="icon-button">
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label="Attach file"
+                >
                   <Paperclip />
                 </button>
                 <input placeholder="Type your message..." required />
-                <button className="send-btn">
+                <button className="send-btn" aria-label="Send message">
                   <Send size={17} />
                 </button>
               </form>
             </section>
-            <aside className="chat-item">
-              <h3>Item information</h3>
-              <img src={(selected || items[2]).image} alt="Item" />
-              <strong>{(selected || items[2]).title}</strong>
-              <Status type={(selected || items[2]).type} />
-              <p>
-                <CalendarDays size={14} />
-                {(selected || items[2]).date}
-              </p>
-              <p>
-                <MapPin size={14} />
-                {(selected || items[2]).district}
-              </p>
-              <div className="privacy-card">
-                <ShieldCheck />
+            {chatItem && (
+              <aside className="chat-item">
+                <h3>Item information</h3>
+                <img src={chatItem.image} alt={chatItem.title} />
+                <strong>{chatItem.title}</strong>
+                <Status type={chatItem.type} />
                 <p>
-                  Personal contact details are hidden until ownership is
-                  confirmed.
+                  <CalendarDays size={14} />
+                  {chatItem.date}
                 </p>
-              </div>
-            </aside>
+                <p>
+                  <MapPin size={14} />
+                  {chatItem.district}
+                </p>
+                <div className="privacy-card">
+                  <ShieldCheck />
+                  <p>
+                    Personal contact details are hidden until ownership is
+                    confirmed.
+                  </p>
+                </div>
+              </aside>
+            )}
           </div>
         </main>
       )}
+
+      {/* ===================== PROFILE ===================== */}
       {page === "Profile" && (
-        <main className="wrap dashboard-page">
+        <main className="wrap profile-page">
           <div className="profile-heading">
             <div className="profile-avatar">
               <img
-                src="https://images.unsplash.com/photo-1535713875002-d1d0cf377cum?auto=format&fit=crop&w=150&q=80"
+                src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80"
                 alt="User"
               />
             </div>
             <div>
-              <span className="section-kicker">YOUR ACCOUNT</span>
               <h1>My Items</h1>
               <p>Manage your lost and found reports in one place.</p>
             </div>
-            <button
-              className="btn btn-primary"
-              onClick={() => startReport("Lost")}
-            >
-              <Plus size={17} /> Report lost item
-            </button>
           </div>
-          <div className="profile-tabs">
-            <button className="active">Lost items</button>
-            <button onClick={() => setTypeFilter("Found")}>Found items</button>
-            <button onClick={() => go("Saved Items")}>
-              Saved items ({saved.length})
-            </button>
-            <button onClick={() => go("Chat")}>Messages</button>
-            <button onClick={() => go("Notifications")}>Notifications</button>
-          </div>
-          <div className="item-grid browse-grid">
-            {items.slice(0, 3).map((item) => (
-              <ItemCard
-                key={item.id}
-                item={item}
-                saved={saved.includes(item.id)}
-                onSave={toggleSaved}
-                onOpen={setSelected}
-              />
-            ))}
+          <div className="profile-layout">
+            <aside className="profile-sidebar">
+              <nav className="profile-menu" aria-label="Account">
+                <button
+                  className={profileTab === "Lost" ? "active" : ""}
+                  onClick={() => setProfileTab("Lost")}
+                >
+                  <ClipboardList size={17} /> Lost items
+                </button>
+                <button
+                  className={profileTab === "Found" ? "active" : ""}
+                  onClick={() => setProfileTab("Found")}
+                >
+                  <PackageSearch size={17} /> Found items
+                </button>
+                <button onClick={() => go("Saved Items")}>
+                  <Heart size={17} /> Saved items ({saved.length})
+                </button>
+                <button onClick={() => go("Chat")}>
+                  <MessageCircle size={17} /> Messages
+                </button>
+                <button onClick={() => go("Notifications")}>
+                  <Bell size={17} /> Notifications
+                </button>
+              </nav>
+            </aside>
+            <section className="profile-content">
+              <div className="page-title-row">
+                <div>
+                  <h2>{profileTab} items</h2>
+                  <p>Reports you have posted as {profileTab.toLowerCase()}.</p>
+                </div>
+                <button
+                  className="btn btn-primary"
+                  onClick={() => startReport(profileTab)}
+                >
+                  <Plus size={17} /> Report {profileTab.toLowerCase()} item
+                </button>
+              </div>
+              {loadingItems ? (
+                <LoadingState />
+              ) : profileItems.length ? (
+                <div className="item-grid browse-grid">
+                  {profileItems.map((item) => (
+                    <ItemCard
+                      key={item.id}
+                      item={item}
+                      saved={saved.includes(item.id)}
+                      onSave={toggleSaved}
+                      onOpen={openItem}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="empty-state">
+                  <PackageSearch size={38} />
+                  <h3>No {profileTab.toLowerCase()} items yet</h3>
+                  <p>Reports you post will show up here.</p>
+                </div>
+              )}
+            </section>
           </div>
         </main>
       )}
+
+      {/* ===================== SAVED ITEMS ===================== */}
       {page === "Saved Items" && (
         <main className="wrap page-main">
           <div className="page-title-row">
@@ -1145,19 +1272,17 @@ const submitReport = async (e) => {
               <p>Items you want to keep an eye on.</p>
             </div>
           </div>
-          {items.filter((i) => saved.includes(i.id)).length ? (
+          {savedItems.length ? (
             <div className="item-grid browse-grid">
-              {items
-                .filter((i) => saved.includes(i.id))
-                .map((item) => (
-                  <ItemCard
-                    key={item.id}
-                    item={item}
-                    saved
-                    onSave={toggleSaved}
-                    onOpen={setSelected}
-                  />
-                ))}
+              {savedItems.map((item) => (
+                <ItemCard
+                  key={item.id}
+                  item={item}
+                  saved
+                  onSave={toggleSaved}
+                  onOpen={openItem}
+                />
+              ))}
             </div>
           ) : (
             <div className="empty-state">
@@ -1171,8 +1296,10 @@ const submitReport = async (e) => {
           )}
         </main>
       )}
+
+      {/* ===================== NOTIFICATIONS ===================== */}
       {page === "Notifications" && (
-        <main className="wrap notifications-page">
+        <main className="wrap page-main">
           <div className="page-title-row">
             <div>
               <span className="section-kicker">STAY IN THE LOOP</span>
@@ -1180,228 +1307,175 @@ const submitReport = async (e) => {
               <p>Relevant updates about your reports and claims.</p>
             </div>
             <button
-              className="text-action"
-              onClick={() => setNotice("All notifications marked as read.")}
+              className="btn btn-outline"
+              onClick={() =>
+                setNotice({
+                  text: "All notifications marked as read.",
+                  type: "success",
+                })
+              }
             >
               Mark all as read
             </button>
           </div>
           <div className="notification-list">
-            {[
-              {
-                icon: <Sparkles />,
-                title: "New possible match found",
-                body: "Your lost item “Black Backpack” has a possible match.",
-                time: "2 hours ago",
-                tone: "orange",
-              },
-              {
-                icon: <MessageCircle />,
-                title: "New message",
-                body: "You have a new message about your item.",
-                time: "4 hours ago",
-                tone: "blue",
-              },
-              {
-                icon: <CheckCircle2 />,
-                title: "Status updated",
-                body: "Your item “Student ID Card” has been marked as returned.",
-                time: "Yesterday",
-                tone: "green",
-              },
-              {
-                icon: <PackageSearch />,
-                title: "New found item in your district",
-                body: "A new found item has been posted in Colombo.",
-                time: "1 day ago",
-                tone: "purple",
-              },
-            ].map((n, i) => (
-              <div className="notification-row" key={n.title}>
-                <span className={`notification-icon ${n.tone}`}>{n.icon}</span>
+            {notifications.map((n, i) => (
+              <div
+                className={i === 0 ? "notification-item unread" : "notification-item"}
+                key={n.title}
+              >
+                <span className="notification-icon">{n.icon}</span>
                 <div>
-                  <strong>{n.title}</strong>
+                  <h3>{n.title}</h3>
                   <p>{n.body}</p>
                   <small>
-                    <Clock3 size={12} />
-                    {n.time}
+                    <Clock3 size={12} /> {n.time}
                   </small>
                 </div>
-                {i === 0 && <span className="unread-dot" />}
               </div>
             ))}
           </div>
         </main>
       )}
+
+      {/* ===================== ADMIN DASHBOARD ===================== */}
       {page === "Admin Dashboard" && (
-        <main className="wrap admin-page">
-          <aside className="admin-sidebar">
-            <Logo onClick={() => go("Home")} />
-            <button className="active">
-              <LayoutDashboard />
-              Dashboard
-            </button>
-            <button onClick={() => go("Explore")}>
-              <ClipboardList />
-              Manage items
-            </button>
-            <button>
-              <Users />
-              Users
-            </button>
-            <button>
-              <Flag />
-              Reports & flags
-            </button>
-            <button>
-              <Building2 />
-              Universities
-            </button>
-            <button>
-              <MapPin />
-              Districts
-            </button>
-            <button>
-              <Settings />
-              Settings
-            </button>
-            <div className="admin-side-note">
-              <ShieldCheck />
-              <p>
-                Administrator access
-                <br />
-                <small>Actions are audited</small>
-              </p>
+        <main className="wrap dashboard-page">
+          <div className="profile-heading">
+            <div>
+              <h1>Dashboard overview</h1>
+              <p>Monitor platform activity and keep the community safe.</p>
             </div>
-          </aside>
-          <section className="admin-content">
-            <span className="section-kicker">ADMINISTRATION</span>
-            <h1>Dashboard overview</h1>
-            <p>Monitor platform activity and keep the community safe.</p>
-            <div className="admin-stats">
-              <div>
-                <span>Total items</span>
-                <strong>1,250</strong>
-                <small>Across all districts</small>
-              </div>
-              <div>
-                <span>Lost items</span>
-                <strong>820</strong>
-                <small>Active reports</small>
-              </div>
-              <div>
-                <span>Found items</span>
-                <strong>430</strong>
-                <small>Active reports</small>
-              </div>
-              <div>
-                <span>Registered users</span>
-                <strong>2,340</strong>
-                <small>Community members</small>
-              </div>
+          </div>
+          <div className="stats">
+            <div>
+              <strong>1,250</strong>
+              <p>Total items</p>
             </div>
-            <div className="admin-table">
-              <div className="table-head">
-                <h3>Recently reported items</h3>
-                <button className="text-action" onClick={() => go("Explore")}>
-                  View all <ArrowUpRight size={15} />
-                </button>
-              </div>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Item</th>
-                    <th>Type</th>
-                    <th>District</th>
-                    <th>Date</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.slice(0, 5).map((i) => (
-                    <tr key={i.id}>
-                      <td>{i.title}</td>
-                      <td>
-                        <Status type={i.type} />
-                      </td>
-                      <td>{i.district}</td>
-                      <td>{i.date}</td>
-                      <td>
-                        <span className="active-status">Active</span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div>
+              <strong>820</strong>
+              <p>Lost items</p>
             </div>
-          </section>
+            <div>
+              <strong>430</strong>
+              <p>Found items</p>
+            </div>
+            <div>
+              <strong>2,340</strong>
+              <p>Registered users</p>
+            </div>
+          </div>
+          <div className="dashboard-card">
+            <div className="dashboard-card-header">
+              <h3>Recently reported items</h3>
+              <button className="btn btn-outline" onClick={() => go("Explore")}>
+                View all <ArrowUpRight size={15} />
+              </button>
+            </div>
+            {loadingItems ? (
+              <LoadingState />
+            ) : (
+              <div className="dashboard-list">
+                {items.slice(0, 5).map((i) => (
+                  <div className="dashboard-list-item" key={i.id}>
+                    <img src={i.image} alt={i.title} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <h4>{i.title}</h4>
+                      <p>
+                        {i.district} · {i.date}
+                      </p>
+                    </div>
+                    <Status type={i.type} />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </main>
       )}
+
+      {/* ===================== LOGIN / REGISTER ===================== */}
       {(page === "Login" || page === "Register") && (
         <main className="auth-page">
-          <div className="auth-card">
-            <div className="auth-logo">
-              <Logo onClick={() => go("Home")} />
+          <div className="auth-visual">
+            <div>
+              <h1>
+                Lost things deserve to find their way home.
+              </h1>
+              <p>
+                Join the community helping people across Sri Lanka report,
+                discover and safely return lost belongings.
+              </p>
             </div>
-            <span className="section-kicker">WELCOME TO FINDIT</span>
-            <h1>{page === "Login" ? "Welcome back" : "Create your account"}</h1>
-            <p>
-              {page === "Login"
-                ? "Sign in to manage your reports and matches."
-                : "Join the community helping lost items find their way home."}
-            </p>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                setNotice(
-                  "Authentication is a frontend demo. Connect your backend to enable accounts.",
-                );
-                go("Home");
-              }}
-            >
-              {page === "Register" && (
-                <label className="field">
-                  Full name
-                  <input required placeholder="Your name" />
-                </label>
-              )}
-              <label className="field">
-                Email address
-                <input required type="email" placeholder="you@example.com" />
-              </label>
-              <label className="field">
-                Password
-                <input
-                  required
-                  type="password"
-                  minLength="8"
-                  placeholder="At least 8 characters"
-                />
-              </label>
-              <button className="btn btn-primary auth-submit">
-                {page === "Login" ? "Sign in" : "Create account"}{" "}
-                <ChevronRight size={17} />
-              </button>
-            </form>
-            <p className="auth-switch">
-              {page === "Login"
-                ? "Don't have an account?"
-                : "Already have an account?"}{" "}
-              <button
-                onClick={() => go(page === "Login" ? "Register" : "Login")}
+          </div>
+          <div className="auth-form-wrap">
+            <div className="auth-form">
+              <h2>{page === "Login" ? "Welcome back" : "Create your account"}</h2>
+              <p>
+                {page === "Login"
+                  ? "Sign in to manage your reports and matches."
+                  : "Join the community helping lost items find their way home."}
+              </p>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  go("Home", {
+                    text: "Authentication is a frontend demo. Connect your backend to enable accounts.",
+                    type: "success",
+                  });
+                }}
               >
-                {page === "Login" ? "Sign up" : "Log in"}
-              </button>
-            </p>
-            <div className="auth-privacy">
-              <LockKeyhole size={14} /> Your personal information stays private.
+                {page === "Register" && (
+                  <label className="field">
+                    Full name
+                    <input required placeholder="Your name" />
+                  </label>
+                )}
+                <label className="field">
+                  Email address
+                  <input required type="email" placeholder="you@example.com" />
+                </label>
+                <label className="field">
+                  Password
+                  <input
+                    required
+                    type="password"
+                    minLength="8"
+                    placeholder="At least 8 characters"
+                  />
+                </label>
+                <button className="btn btn-primary">
+                  {page === "Login" ? "Sign in" : "Create account"}{" "}
+                  <ChevronRight size={17} />
+                </button>
+              </form>
+              <div className="auth-bottom">
+                {page === "Login"
+                  ? "Don't have an account?"
+                  : "Already have an account?"}{" "}
+                <a
+                  href="#"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    go(page === "Login" ? "Register" : "Login");
+                  }}
+                >
+                  {page === "Login" ? "Sign up" : "Log in"}
+                </a>
+              </div>
+              <div className="auth-bottom">
+                <LockKeyhole size={14} /> Your personal information stays
+                private.
+              </div>
             </div>
           </div>
         </main>
       )}
+
+      {/* ===================== ABOUT ===================== */}
       {page === "About" && (
         <main className="wrap about-page">
-          <span className="section-kicker">ABOUT FINDIT</span>
+          <span className="eyebrow">ABOUT FINDIT</span>
           <h1>
             Lost things deserve
             <br />
@@ -1412,33 +1486,45 @@ const submitReport = async (e) => {
             safely return lost belongings. We believe finding an item should be
             simple, safe and respectful of everyone's privacy.
           </p>
-          <div className="about-cards">
-            <div>
-              <ShieldCheck />
+          <div className="about-grid">
+            <div className="about-card">
+              <span className="feature-icon teal" style={{ margin: 0 }}>
+                <ShieldCheck />
+              </span>
               <h3>Privacy by design</h3>
               <p>
                 Contact details stay private while you coordinate through the
                 platform.
               </p>
             </div>
-            <div>
-              <MapPin />
+            <div className="about-card">
+              <span className="feature-icon blue" style={{ margin: 0 }}>
+                <MapPin />
+              </span>
               <h3>Local discovery</h3>
               <p>Find relevant listings by district, category and location.</p>
             </div>
-            <div>
-              <Heart />
+            <div className="about-card">
+              <span className="feature-icon purple" style={{ margin: 0 }}>
+                <Heart />
+              </span>
               <h3>Community powered</h3>
               <p>
                 Every report can help reunite someone with something important.
               </p>
             </div>
           </div>
-          <button className="btn btn-primary" onClick={() => go("Explore")}>
+          <button
+            className="btn btn-primary"
+            style={{ marginTop: 30 }}
+            onClick={() => go("Explore")}
+          >
             Explore items <ArrowUpRight size={17} />
           </button>
         </main>
       )}
+
+      {/* ===================== FOOTER ===================== */}
       <footer className="footer">
         <div className="wrap footer-inner">
           <div>
@@ -1460,48 +1546,8 @@ const submitReport = async (e) => {
           <span>Made for a safer, more connected Sri Lanka.</span>
         </div>
       </footer>
-      {selected && page !== "Item Details" && (
-        <div className="modal-backdrop" onClick={() => setSelected(null)}>
-          <div className="item-modal" onClick={(e) => e.stopPropagation()}>
-            <button className="modal-close" onClick={() => setSelected(null)}>
-              <X />
-            </button>
-            <img src={selected.image} alt={selected.title} />
-            <div className="modal-body">
-              <Status type={selected.type} />
-              <h2>{selected.title}</h2>
-              <p>{selected.description}</p>
-              <div className="detail-meta">
-                <span>
-                  <CalendarDays />
-                  {selected.date}
-                </span>
-                <span>
-                  <MapPin />
-                  {selected.district}
-                </span>
-              </div>
-              <button
-                className="btn btn-primary modal-action"
-                onClick={() => {
-                  setSelected(selected);
-                  go("Item Details");
-                }}
-              >
-                View item details <ArrowUpRight size={16} />
-              </button>
-              <p className="modal-privacy">
-                <ShieldCheck size={15} /> Personal contact details are hidden.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-      <button className="floating-report" onClick={openReport}>
-        <Plus size={19} />
-        <span>Report item</span>
-      </button>
     </div>
   );
 }
+
 export default App;
