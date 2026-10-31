@@ -1,8 +1,11 @@
+require("dotenv").config();
+
 const express = require("express");
 const cors = require("cors");
+const { Pool } = require("pg");
 
 const app = express();
-const PORT = 4000;
+const PORT = process.env.PORT || 4000;
 
 app.use(
   cors({
@@ -12,145 +15,219 @@ app.use(
 
 app.use(express.json());
 
-// Temporary sample reports
-let items = [
-  {
-    id: 1,
-    title: "Black Wallet",
-    category: "Wallet",
-    kind: "Lost",
-    district: "Colombo",
-    place: "University Library",
-    date: "2026-10-18",
-    description: "A black wallet was lost near the library.",
-  },
-  {
-    id: 2,
-    title: "Student ID Card",
-    category: "ID Card",
-    kind: "Found",
-    district: "Gampaha",
-    place: "Bus Stand",
-    date: "2026-10-17",
-    description: "A student ID card was found near the bus stand.",
-  },
-];
-
-// Test the backend
-app.get("/api/health", (req, res) => {
-  res.json({
-    status: "ok",
-    message: "UniFind backend is running",
-  });
+const pool = new Pool({
+  host: process.env.DB_HOST || "localhost",
+  port: Number(process.env.DB_PORT || 5432),
+  database: process.env.DB_NAME || "lost_found",
+  user: process.env.DB_USER || "postgres",
+  password: process.env.DB_PASSWORD || "",
 });
 
-// Get all reports
-app.get("/api/items", (req, res) => {
-  const { search, category, district, kind } = req.query;
-
-  let result = [...items];
-
-  if (search) {
-    const keyword = search.toLowerCase();
-
-    result = result.filter((item) =>
-      `${item.title} ${item.description} ${item.place}`
-        .toLowerCase()
-        .includes(keyword)
+// Test the backend and database connection
+app.get("/api/health", async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT current_database() AS database"
     );
-  }
 
-  if (category && category !== "All categories") {
-    result = result.filter(
-      (item) => item.category === category
+    res.json({
+      status: "ok",
+      message: "UniFind backend is running",
+      database: result.rows[0].database,
+    });
+  } catch (error) {
+    console.error("Database connection error:", error.message);
+
+    res.status(500).json({
+      status: "error",
+      message: "Backend is running, but the database connection failed.",
+    });
+  }
+});
+
+// Get all reports with optional filters
+app.get("/api/items", async (req, res) => {
+  try {
+    const { search, category, district, kind } = req.query;
+
+    const conditions = [];
+    const values = [];
+
+    if (search) {
+      values.push(`%${search}%`);
+      conditions.push(
+        `(title ILIKE $${values.length}
+          OR description ILIKE $${values.length}
+          OR place ILIKE $${values.length})`
+      );
+    }
+
+    if (category && category !== "All categories") {
+      values.push(category);
+      conditions.push(`category = $${values.length}`);
+    }
+
+    if (district && district !== "All districts") {
+      values.push(district);
+      conditions.push(`district = $${values.length}`);
+    }
+
+    if (kind && kind !== "Lost & Found") {
+      if (!["Lost", "Found"].includes(kind)) {
+        return res.status(400).json({
+          error: "Type must be Lost or Found.",
+        });
+      }
+
+      values.push(kind);
+      conditions.push(`kind = $${values.length}`);
+    }
+
+    const whereClause = conditions.length
+      ? `WHERE ${conditions.join(" AND ")}`
+      : "";
+
+    const result = await pool.query(
+      `SELECT id, title, category, kind, district,
+              place, TO_CHAR(date, 'YYYY-MM-DD') AS date,
+              description
+       FROM items
+       ${whereClause}
+       ORDER BY created_at DESC`,
+      values
     );
-  }
 
-  if (district && district !== "All districts") {
-    result = result.filter(
-      (item) => item.district === district
-    );
-  }
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Failed to retrieve reports:", error.message);
 
-  if (kind && kind !== "Lost & Found") {
-    result = result.filter(
-      (item) =>
-        item.kind.toLowerCase() === kind.toLowerCase()
-    );
+    res.status(500).json({
+      error: "Failed to retrieve reports.",
+    });
   }
-
-  res.json(result);
 });
 
 // Submit a Lost or Found report
-app.post("/api/items", (req, res) => {
-  const {
-    title,
-    category,
-    kind,
-    district,
-    place,
-    date,
-    description,
-  } = req.body;
+app.post("/api/items", async (req, res) => {
+  try {
+    const {
+      title,
+      category,
+      kind,
+      district,
+      place,
+      date,
+      description,
+    } = req.body;
 
-  if (
-    !title ||
-    !category ||
-    !kind ||
-    !district ||
-    !place ||
-    !date ||
-    !description
-  ) {
-    return res.status(400).json({
-      error: "Please complete all required fields.",
+    if (
+      !title?.trim() ||
+      !category?.trim() ||
+      !kind ||
+      !district?.trim() ||
+      !place?.trim() ||
+      !date ||
+      !description?.trim()
+    ) {
+      return res.status(400).json({
+        error: "Please complete all required fields.",
+      });
+    }
+
+    if (!["Lost", "Found"].includes(kind)) {
+      return res.status(400).json({
+        error: "Type must be Lost or Found.",
+      });
+    }
+
+    // Check that the date is in YYYY-MM-DD format
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res.status(400).json({
+        error: "Please provide a valid date in YYYY-MM-DD format.",
+      });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO items
+        (title, category, kind, district, place, date, description)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id, title, category, kind, district,
+                 place, TO_CHAR(date, 'YYYY-MM-DD') AS date,
+                 description`,
+      [
+        title.trim(),
+        category.trim(),
+        kind,
+        district.trim(),
+        place.trim(),
+        date,
+        description.trim(),
+      ]
+    );
+
+    res.status(201).json({
+      message: "Report submitted successfully.",
+      item: result.rows[0],
+    });
+  } catch (error) {
+    console.error("Failed to submit report:", error.message);
+
+    res.status(500).json({
+      error: "Failed to submit report.",
     });
   }
-
-  if (!["Lost", "Found"].includes(kind)) {
-    return res.status(400).json({
-      error: "Type must be Lost or Found.",
-    });
-  }
-
-  const newItem = {
-    id: Date.now(),
-    title,
-    category,
-    kind,
-    district,
-    place,
-    date,
-    description,
-  };
-
-  items.push(newItem);
-
-  res.status(201).json({
-    message: "Report submitted successfully.",
-    item: newItem,
-  });
 });
 
-// Get a single report
-app.get("/api/items/:id", (req, res) => {
-  const item = items.find(
-    (entry) => entry.id === Number(req.params.id)
-  );
+// Get one report by ID
+app.get("/api/items/:id", async (req, res) => {
+  try {
+    const id = Number(req.params.id);
 
-  if (!item) {
-    return res.status(404).json({
-      error: "Item not found",
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({
+        error: "Invalid item ID.",
+      });
+    }
+
+    const result = await pool.query(
+      `SELECT id, title, category, kind, district,
+              place, TO_CHAR(date, 'YYYY-MM-DD') AS date,
+              description
+       FROM items
+       WHERE id = $1`,
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        error: "Item not found.",
+      });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error("Failed to retrieve report:", error.message);
+
+    res.status(500).json({
+      error: "Failed to retrieve report.",
     });
   }
-
-  res.json(item);
 });
 
 // Start the server
-app.listen(PORT, () => {
-  console.log(
-    `UniFind backend running at http://localhost:${PORT}`
-  );
+const server = app.listen(PORT, () => {
+  console.log(`UniFind backend running at http://localhost:${PORT}`);
+});
+
+// Handle unexpected database connection failures
+pool.on("error", (error) => {
+  console.error("Unexpected PostgreSQL pool error:", error.message);
+});
+
+// Close database connections cleanly
+process.on("SIGINT", async () => {
+  server.close(async () => {
+    await pool.end();
+    process.exit(0);
+  });
 });
